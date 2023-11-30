@@ -1,7 +1,7 @@
 process DORADO_BASECALLER {
     tag "$meta.id"
     label 'process_gpu'
-    //label 'process_high' // Something like if modified bases - process high?
+    label 'process_high' // Something like if modified bases - process high?
 
     container "docker.io/fellen31/dorado:0.4.3"
 
