@@ -529,7 +529,7 @@ final_fastq_channel = new_fastq_channel_barcoded_meta.concat(new_fastq_non_barco
         .set{ ch_fqcrs_rebasecall_in }
 
     if(!params.skip_mapping) {
-    ALIGN_READS( SAMTOOLS_FASTQ_REBASECALL.out.fastq, mmi )
+    ALIGN_READS( SAMTOOLS_FASTQ_SAMTOOLS_PASS.out.fastq, mmi )
 
     bam_bai = ALIGN_READS.out.bam_bai
     bam     = ALIGN_READS.out.bam
@@ -543,12 +543,12 @@ final_fastq_channel = new_fastq_channel_barcoded_meta.concat(new_fastq_non_barco
     if(params.skip_basecall && !params.skip_mapping) {
         if(params.bam)
         {
-        MOSDEPTH( bam_bai_non_rebasecalled.combine(ch_bed.map{ meta, bed -> bed }), ch_fasta )
+        MOSDEPTH_REBASECALL( bam_bai_non_rebasecalled.combine(ch_bed.map{ meta, bed -> bed }), ch_fasta )
         }
 
     } else if (!params.skip_mapping){
 
-        MOSDEPTH( bam_bai.combine(ch_bed.map{ meta, bed -> bed }), ch_fasta )
+        MOSDEPTH_REBASECALL( bam_bai.combine(ch_bed.map{ meta, bed -> bed }), ch_fasta )
 
     }
 
