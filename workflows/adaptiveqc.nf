@@ -36,6 +36,7 @@ include { FQCRS                             } from '../modules/local/fqcrs/main'
 include { FQCRS as FQCRS_REBASECALL         } from '../modules/local/fqcrs/main'
 include { DORADO_BASECALLER                 } from '../modules/local/dorado/basecaller/main'
 include { DORADO_DEMUX                      } from '../modules/local/dorado/demux/main'
+include { POD5_CONVERT                      } from '../modules/local/pod5/convert/main'
 include { ONT_SEQUENCING_SUMMARY_TO_PARQUET } from '../modules/local/ont_sequencing_summary_to_parquet/main'
 include { FQCRS_TO_HIVE as FQCRS_TO_HIVE_ORIGINAL   } from '../modules/local/fqcrs_to_hive/main'
 include { FQCRS_TO_HIVE as FQCRS_TO_HIVE_REBASECALL } from '../modules/local/fqcrs_to_hive/main'
@@ -79,6 +80,9 @@ def multiqc_report = []
 
 workflow ADAPTIVEQC {
 
+    //TODO: Samplesheet header validation
+    // Run demux if specified in samplesheet
+
     /* Main workflow
 
        1. Do rebasecalling first if params.basecalling
@@ -96,47 +100,22 @@ workflow ADAPTIVEQC {
     modified_paths = ch_sample.map{ sample, dir -> "${dir}**" }
     all_files_channel = modified_paths.flatMap { path -> file(path).collect() }
 
+    ch_mod_bases = []
+    ch_kit = []
+    if(params.barcode_kit) { ch_kit = params.barcode_kit }
+
 
     // Index genome
-
     if(!params.skip_mapping) {
 
+        PREPARE_GENOME( ch_fasta )
+        ch_versions = ch_versions.mix(PREPARE_GENOME.out.versions)
 
-    PREPARE_GENOME( ch_fasta )
-    ch_versions = ch_versions.mix(PREPARE_GENOME.out.versions)
-
-    // Gather indices
-    fasta = ch_fasta
-    fai   = PREPARE_GENOME.out.fai
-    mmi   = PREPARE_GENOME.out.mmi
-
+        // Gather indices
+        fasta = ch_fasta
+        fai   = PREPARE_GENOME.out.fai
+        mmi   = PREPARE_GENOME.out.mmi
     }
-
-    // Can we do a check if any dir contains the word barcode, set barcode to be true?
-    // But then, what if some runs have and some don't
-    // Better in params?
-
-    // If not barcode change takeRight to 4, set barecode == 'no_barcode' ?
-    // Or can we somehow do this for all files, by looking at the position of experiment dir?
-
-    // This pipeline should maybe pretend that reads have not been aligned by default...
-    // Which means a (re-)mapping step here SAMTOOLS CAT *.bam | samtools fastq -T MM,ML | minimap2 -y ...
-   /* ONLY DO THIS IF NOT REBASECALLING */
-
-   /* SAMTOOLS_CAT( ch_cat_in )               // Combine sort & cat processes later
-    SAMTOOLS_SORT( SAMTOOLS_CAT.out.bam )   //
-    SAMTOOLS_INDEX( SAMTOOLS_SORT.out.bam )
-
-    SAMTOOLS_SORT.out.bam
-        .join( SAMTOOLS_INDEX.out.bai )
-        .groupTuple()
-        .set{ ch_bam_bai_pass }
-
-    ch_bam_bai_pass
-        .combine(ch_bed.map{ meta, bed -> bed })
-        .set{ ch_mosdepth_in }
-
-    MOSDEPTH( ch_mosdepth_in, ch_fasta )*/
 
     // From here starts "new" (from ONT samplesheet)
     all_files_channel
@@ -146,11 +125,11 @@ workflow ADAPTIVEQC {
                  pod5: path.getExtension() == "pod5"
                  bam: path.getExtension() == "bam"
                  fastq: name =~  /.*\.fastq\.gz$/ // ok?
+                 fast5: path.getExtension() == "fast5"
         }
         .set { all_files_branched }
 
-
-
+    // Extract the base dir for experiment - based on samplesheet location
     all_files_branched.sample_sheet
         .map{ dir, name, path ->
             run_id = dir.toString().tokenize("/").takeRight(3).join("/")
@@ -167,6 +146,50 @@ workflow ADAPTIVEQC {
             [new_meta]
         }
         .set{ base_dir }
+
+    // Then we can
+    base_dir
+        .combine(all_files_branched.fast5)
+        // Keep only the correct base_dir match (sample_sheet) for the run
+        // by checking path for run_id. Almost like a bad join
+        .filter{ sample_sheet_meta, dir, name, path ->
+            path =~ /.*${sample_sheet_meta.run_id}.*/
+        }
+        .set{ ch_pod5_convert_in }
+
+    ch_pod5_convert_in
+        .map{ new_fast5_sample_sheet_meta, new_fast5_dir, new_fast5_name, new_fast5_path ->
+            new_fast5_meta =[
+                id:new_fast5_name,
+                base_dir:new_fast5_sample_sheet_meta.base_dir,
+                experiment_dir:new_fast5_sample_sheet_meta.experiment_dir,
+                experiment:new_fast5_sample_sheet_meta.experiment,
+                sample:new_fast5_sample_sheet_meta.sample,
+                run_id:new_fast5_sample_sheet_meta.run_id,
+            ]
+            [new_fast5_meta, new_fast5_path]
+          }
+        // Think this might work?
+        .set{ ch_pod5_convert_in }
+
+    // Convert fast5 files to pod5
+    POD5_CONVERT( ch_pod5_convert_in )
+    // This then needs to be joined with the other pod5's
+    POD5_CONVERT.out.pod5
+        .map{ meta, path ->
+            converted_meta = [
+                id:meta.id,
+                base_dir:meta.base_dir,
+                experiment_dir:meta.experiment_dir,
+                experiment:meta.experiment,
+                sample:meta.sample,
+                run_id:meta.run_id,
+                type:'fast5_converted'
+            ]
+        [converted_meta, path]
+        }
+        .set{ ch_converted_pod5 }
+
     // Ok, redo fastq here base_dir
     base_dir
         .combine(all_files_branched.fastq)
@@ -376,41 +399,32 @@ final_fastq_channel = new_fastq_channel_barcoded_meta.concat(new_fastq_non_barco
 
 
     if(params.skip_basecall) {
+
         if(params.bam) {
+            SAMTOOLS_CAT( all_bam_grouped )
+            SAMTOOLS_SORT( SAMTOOLS_CAT.out.bam )
+            SAMTOOLS_INDEX(SAMTOOLS_SORT.out.bam)
 
-        SAMTOOLS_CAT( all_bam_grouped )
-        SAMTOOLS_SORT( SAMTOOLS_CAT.out.bam )
-        SAMTOOLS_INDEX(SAMTOOLS_SORT.out.bam)
+            SAMTOOLS_SORT.out.bam
+                .join(SAMTOOLS_INDEX.out.bai)
+                .groupTuple()
+                .set{ bam_bai_non_rebasecalled }
 
-        SAMTOOLS_SORT.out.bam
-            .join(SAMTOOLS_INDEX.out.bai)
-            .groupTuple()
-            .set{ bam_bai_non_rebasecalled }
+            SAMTOOLS_FASTQ( bam_bai_non_rebasecalled.map{ meta, bam, bai -> [meta, bam] } )
 
-        SAMTOOLS_FASTQ( bam_bai_non_rebasecalled.map{ meta, bam, bai -> [meta, bam] } )
-
-    FQCRS ( SAMTOOLS_FASTQ.out.fastq )
-    // Resuming might be problematic when/if not overwriting?
-    FQCRS_TO_HIVE_ORIGINAL ( FQCRS.out.res )
-
-
+            // Want to do FQCRS on all reads, including failed reads
+            FQCRS ( SAMTOOLS_FASTQ.out.fastq )
+            // Resuming might be problematic when/if not overwriting?
+            FQCRS_TO_HIVE_ORIGINAL ( FQCRS.out.res )
 
         } else if (params.fastq) {
-    FQCRS ( all_fastq_grouped )
-    // Resuming might be problematic when/if not overwriting?
-    FQCRS_TO_HIVE_ORIGINAL ( FQCRS.out.res )
-    }    // Different number each time
+            FQCRS ( all_fastq_grouped )
+            FQCRS_TO_HIVE_ORIGINAL ( FQCRS.out.res )
+        }
 
-}
-   // Fast vi har också nästan alltid fastq.gz filer med...
-
-    // Säg att vi hare rebasecallat, är detta en annan pipeline?
-    // Kan lägga in dessa som "bam_skip i värsta fall", alt som ett eget sample (!!) med ett eget dir - för att inte kontaminera
-
-    // Now that this is done, we could just process the sequencing_summary if everything was ok in MinKNOW
+    }
 
     // Extract sequencing summaries -> to_parquet, this should be able to be done in parallel right?
-
     all_files_channel
         .map { it -> [ ['dir':it.getParent()], it] }
         .filter { meta, file -> file =~ /sequencing_summary_/ }
@@ -430,111 +444,101 @@ final_fastq_channel = new_fastq_channel_barcoded_meta.concat(new_fastq_non_barco
 
     ONT_SEQUENCING_SUMMARY_TO_PARQUET( ch_make_fqcrs_hive_in )
 
-        // Do we even need to know about barcodes at all to just run rebasecall? No?
-        base_dir.combine(all_files_branched.pod5)
-            .filter{ sample_sheet_meta, dir, name, path ->
-                path =~ /.*${sample_sheet_meta.run_id}.*/
-            }
+    // Do we even need to know about barcodes at all to just run rebasecall? No?
+    base_dir.combine(all_files_branched.pod5)
+        .filter{ sample_sheet_meta, dir, name, path ->
+            path =~ /.*${sample_sheet_meta.run_id}.*/
+        }
             // This should at least work for the pod5's
             // I see no better way, unless we specify each and every file in the samplesheet
-            .map{ sample_sheet_meta, dir, name, path ->
-                group = [sample_sheet_meta.run_id, sample_sheet_meta.experiment, sample_sheet_meta.sample, sample_sheet_meta.run_id].join("f2c471d8-5cdc-4194-a723-ce2a39ce8683")
-                [group, path]
-            }
-            .groupTuple()
-            .map{ group, paths ->
-                (id, experiment, sample, run_id ) = group.split("f2c471d8-5cdc-4194-a723-ce2a39ce8683")
-                meta = [
-                   id:id,
-                   experiment:experiment,
-                   sample:sample,
-                   run_id:run_id,
-                ]
-                [meta, paths]
-            }
-            // For fastq and bam we might need other strategies when it comes to identifying barcodes
-            // Can we look for 'barcode' or 'unclassified' in path?
-            // Branch on this
-            // And if we don't find any barcode set 'barcode':'no_barcode'?
+        .map{ sample_sheet_meta, dir, name, path ->
+            group = [sample_sheet_meta.run_id, sample_sheet_meta.experiment, sample_sheet_meta.sample, sample_sheet_meta.run_id].join("f2c471d8-5cdc-4194-a723-ce2a39ce8683")
+            [group, path]
+        }
+        .groupTuple()
+        .map{ group, paths ->
+            (id, experiment, sample, run_id ) = group.split("f2c471d8-5cdc-4194-a723-ce2a39ce8683")
+            meta = [
+               id:id,
+               experiment:experiment,
+               sample:sample,
+               run_id:run_id,
+            ]
+            [meta, paths]
+        }
+        // For fastq and bam we might need other strategies when it comes to identifying barcodes
+        // Can we look for 'barcode' or 'unclassified' in path?
+        // Branch on this
+        // And if we don't find any barcode set 'barcode':'no_barcode'?
+        // Add pod5 coverted files
+        .concat(ch_converted_pod5)
+        .set{ ch_dorado_basecall_in }
 
-            .set{ ch_dorado_basecall_in }
-
-    all_files_branched.sample_sheet
-        .map{ dir, name, path -> path}
-        .splitCsv(header:true)
-     //   .view()
-    //all_files_branched.pod5
-
-    ch_mod_bases = []
     if(params.mod_bases) { ch_mod_bases = params.mod_bases}
 
-    // How to make dorado start first? Order i  document?
     if(!params.skip_basecall) {
 
         DORADO_BASECALLER( ch_dorado_basecall_in, params.dorado_model, ch_mod_bases)
 
-    ch_kit = []
-    if(params.barcode_kit) { ch_kit = params.barcode_kit }
+        if(!params.skip_demux) {
 
-    if(!params.skip_demux) {
-        DORADO_DEMUX ( DORADO_BASECALLER.out.ubam, params.barcode_kit)
+            DORADO_DEMUX ( DORADO_BASECALLER.out.ubam, params.barcode_kit)
 
-        DORADO_DEMUX.out.barcode_bam // This process will always output multiple files..
-            .transpose(remainder:true) // Transpose works but have to wait for all to finish - nedd to get it to group by barcode
-            .map{ meta_demux, bam_demux ->
-                (run_id, barcode_demux, extension_demux) = bam_demux.toString().tokenize(".")
-                meta_demux_new = [
-                    id:[meta_demux.experiment, meta_demux.sample, barcode_demux].join("."),
-                    experiment:meta_demux.experiment,
-                    sample:meta_demux.sample,
-                    run_id:meta_demux.run_id,
+            DORADO_DEMUX.out.barcode_bam // This process will always output multiple files..
+                .transpose(remainder:true) // Transpose works but have to wait for all to finish - nedd to get it to group by barcode
+                .map{ meta_demux, bam_demux ->
+                    (run_id, barcode_demux, extension_demux) = bam_demux.toString().tokenize(".")
+                    meta_demux_new = [
+                        id:[meta_demux.experiment, meta_demux.sample, barcode_demux].join("."),
+                        experiment:meta_demux.experiment,
+                        sample:meta_demux.sample,
+                        run_id:meta_demux.run_id,
+                        type:'rebasecalled_all',
+                        barcode:barcode_demux,
+                        extension:extension_demux,
+                        file:bam_demux.getName()
+                    ]
+                [meta_demux_new, bam_demux]
+            }
+            .set{ ch_samtools_fastq_rebasecall_in}
+        }
+        if(params.skip_demux) {
+
+            DORADO_BASECALLER.out.ubam
+            .map{ meta, ubam ->
+                meta_non_demux = [
+                    id:meta.id,
+                    experiment:meta.experiment,
+                    sample:meta.sample,
+                    run_id:meta.run_id,
                     type:'rebasecalled_all',
-                    barcode:barcode_demux,
-                    extension:extension_demux,
-                    file:bam_demux.getName()
+                    barcode:'non_barcoded',
+                    extension:ubam.getExtension(),
+                    file:ubam.getName()
                 ]
-             [meta_demux_new, bam_demux]
+                [meta_non_demux, ubam]
+            }
+            .set{ ch_samtools_fastq_rebasecall_in}
         }
-        .set{ ch_samtools_fastq_rebasecall_in}
-    }
-    if(params.skip_demux) {
-
-        DORADO_BASECALLER.out.ubam
-        .map{ meta, ubam ->
-            meta_non_demux = [
-                id:meta.id,
-                experiment:meta.experiment,
-                sample:meta.sample,
-                run_id:meta.run_id,
-                type:'rebasecalled_all',
-                barcode:'non_barcoded',
-                extension:ubam.getExtension(),
-                file:ubam.getName()
-            ]
-            [meta_non_demux, ubam]
-        }
-        .set{ ch_samtools_fastq_rebasecall_in}
-    }
 
     SAMTOOLS_PASS( ch_samtools_fastq_rebasecall_in.map{meta, bam -> [meta, bam, []]}, ch_fasta, [] )
-
 
     // This should be combined into fcqrs-process
     SAMTOOLS_FASTQ_REBASECALL( ch_samtools_fastq_rebasecall_in )
 
     SAMTOOLS_FASTQ_SAMTOOLS_PASS( SAMTOOLS_PASS.out.bam )
 
-
     SAMTOOLS_FASTQ_REBASECALL.out.fastq
         .set{ ch_fqcrs_rebasecall_in }
 
     if(!params.skip_mapping) {
-    ALIGN_READS( SAMTOOLS_FASTQ_SAMTOOLS_PASS.out.fastq, mmi )
+        ALIGN_READS( SAMTOOLS_FASTQ_SAMTOOLS_PASS.out.fastq, mmi )
 
-    bam_bai = ALIGN_READS.out.bam_bai
-    bam     = ALIGN_READS.out.bam
-    bai     = ALIGN_READS.out.bai
+        bam_bai = ALIGN_READS.out.bam_bai
+        bam     = ALIGN_READS.out.bam
+        bai     = ALIGN_READS.out.bai
     }
+
     FQCRS_REBASECALL( ch_fqcrs_rebasecall_in )
     FQCRS_TO_HIVE_REBASECALL( FQCRS_REBASECALL.out.res )
 
