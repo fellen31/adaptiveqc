@@ -179,12 +179,12 @@ workflow ADAPTIVEQC {
         .map{ meta, path ->
             converted_meta = [
                 id:meta.id,
-                base_dir:meta.base_dir,
-                experiment_dir:meta.experiment_dir,
+                //base_dir:meta.base_dir,
+                //experiment_dir:meta.experiment_dir,
                 experiment:meta.experiment,
                 sample:meta.sample,
                 run_id:meta.run_id,
-                type:'fast5_converted'
+                //type:'fast5_converted'
             ]
         [converted_meta, path]
         }
@@ -472,7 +472,9 @@ final_fastq_channel = new_fastq_channel_barcoded_meta.concat(new_fastq_non_barco
         // And if we don't find any barcode set 'barcode':'no_barcode'?
         // Add pod5 coverted files
         .concat(ch_converted_pod5)
+        .groupTuple()
         .set{ ch_dorado_basecall_in }
+
 
     if(params.mod_bases) { ch_mod_bases = params.mod_bases}
 
