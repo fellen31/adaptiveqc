@@ -178,7 +178,7 @@ workflow ADAPTIVEQC {
     POD5_CONVERT.out.pod5
         .map{ meta, path ->
             converted_meta = [
-                id:meta.id,
+                //id:meta.id,
                 //base_dir:meta.base_dir,
                 //experiment_dir:meta.experiment_dir,
                 experiment:meta.experiment,
@@ -189,7 +189,6 @@ workflow ADAPTIVEQC {
         [converted_meta, path]
         }
         .set{ ch_converted_pod5 }
-
     // Ok, redo fastq here base_dir
     base_dir
         .combine(all_files_branched.fastq)
@@ -452,14 +451,20 @@ final_fastq_channel = new_fastq_channel_barcoded_meta.concat(new_fastq_non_barco
             // This should at least work for the pod5's
             // I see no better way, unless we specify each and every file in the samplesheet
         .map{ sample_sheet_meta, dir, name, path ->
-            group = [sample_sheet_meta.run_id, sample_sheet_meta.experiment, sample_sheet_meta.sample, sample_sheet_meta.run_id].join("f2c471d8-5cdc-4194-a723-ce2a39ce8683")
+            group = [sample_sheet_meta.run_id, sample_sheet_meta.experiment, sample_sheet_meta.sample].join("f2c471d8-5cdc-4194-a723-ce2a39ce8683")
             [group, path]
         }
+        .concat(
+               ch_converted_pod5.map{ pod5_converted_meta, pod5_converted_path ->
+                    pod5_group = [pod5_converted_meta.run_id, pod5_converted_meta.experiment, pod5_converted_meta.sample].join("f2c471d8-5cdc-4194-a723-ce2a39ce8683")
+                    [pod5_group, pod5_converted_path]
+                }
+               )
         .groupTuple()
         .map{ group, paths ->
-            (id, experiment, sample, run_id ) = group.split("f2c471d8-5cdc-4194-a723-ce2a39ce8683")
+            (run_id, experiment, sample) = group.split("f2c471d8-5cdc-4194-a723-ce2a39ce8683")
             meta = [
-               id:id,
+               id:run_id,
                experiment:experiment,
                sample:sample,
                run_id:run_id,
@@ -471,10 +476,7 @@ final_fastq_channel = new_fastq_channel_barcoded_meta.concat(new_fastq_non_barco
         // Branch on this
         // And if we don't find any barcode set 'barcode':'no_barcode'?
         // Add pod5 coverted files
-        .concat(ch_converted_pod5)
-        .groupTuple()
         .set{ ch_dorado_basecall_in }
-
 
     if(params.mod_bases) { ch_mod_bases = params.mod_bases}
 
