@@ -183,7 +183,7 @@ workflow ADAPTIVEQC {
                 //experiment_dir:meta.experiment_dir,
                 experiment:meta.experiment,
                 sample:meta.sample,
-                run_id:meta.run_id,
+                run_id:meta.run_id//,
                 //type:'fast5_converted'
             ]
         [converted_meta, path]
