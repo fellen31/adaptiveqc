@@ -34,12 +34,15 @@ ch_multiqc_custom_methods_description = params.multiqc_methods_description ? fil
 
 include { FQCRS                             } from '../modules/local/fqcrs/main'
 include { FQCRS as FQCRS_REBASECALL         } from '../modules/local/fqcrs/main'
+include { FQCRS_BAM                         } from '../modules/local/fqcrs_bam/main'
 include { DORADO_BASECALLER                 } from '../modules/local/dorado/basecaller/main'
+include { DORADO_BASECALLER_DEMUX           } from '../modules/local/dorado/basecaller_demux/main'
 include { DORADO_DEMUX                      } from '../modules/local/dorado/demux/main'
 include { POD5_CONVERT                      } from '../modules/local/pod5/convert/main'
 include { ONT_SEQUENCING_SUMMARY_TO_PARQUET } from '../modules/local/ont_sequencing_summary_to_parquet/main'
 include { FQCRS_TO_HIVE as FQCRS_TO_HIVE_ORIGINAL   } from '../modules/local/fqcrs_to_hive/main'
 include { FQCRS_TO_HIVE as FQCRS_TO_HIVE_REBASECALL } from '../modules/local/fqcrs_to_hive/main'
+include { SAMTOOLS_VIEW_FASTQ as SAMTOOLS_VIEW_FASTQ_PASS } from '../modules/local/samtools/view_fastq/main'
 
 //
 // SUBWORKFLOW: Consisting of a mix of local and nf-core/modules
@@ -66,6 +69,7 @@ include { SAMTOOLS_FASTQ              } from '../modules/nf-core/samtools/fastq/
 include { SAMTOOLS_FASTQ as SAMTOOLS_FASTQ_SAMTOOLS_PASS } from '../modules/nf-core/samtools/fastq/main'
 include { SAMTOOLS_FASTQ as SAMTOOLS_FASTQ_REBASECALL } from '../modules/nf-core/samtools/fastq/main'
 include { MOSDEPTH as MOSDEPTH_REBASECALL } from '../modules/nf-core/mosdepth/main'
+include { MOSDEPTH as MOSDEPTH_500 } from '../modules/nf-core/mosdepth/main'
 include { MULTIQC                     } from '../modules/nf-core/multiqc/main'
 include { CUSTOM_DUMPSOFTWAREVERSIONS } from '../modules/nf-core/custom/dumpsoftwareversions/main'
 
@@ -482,13 +486,14 @@ final_fastq_channel = new_fastq_channel_barcoded_meta.concat(new_fastq_non_barco
 
     if(!params.skip_basecall) {
 
-        DORADO_BASECALLER( ch_dorado_basecall_in, params.dorado_model, ch_mod_bases)
 
         if(!params.skip_demux) {
 
-            DORADO_DEMUX ( DORADO_BASECALLER.out.ubam, params.barcode_kit)
+            // Directly demux basecalled BAM's to reduce temporary files
+            DORADO_BASECALLER_DEMUX( ch_dorado_basecall_in, params.dorado_model, ch_mod_bases, params.barcode_kit)
 
-            DORADO_DEMUX.out.barcode_bam // This process will always output multiple files..
+
+            DORADO_BASECALLER_DEMUX.out.barcode_bam // This process will always output multiple files..
                 .transpose(remainder:true) // Transpose works but have to wait for all to finish - nedd to get it to group by barcode
                 .map{ meta_demux, bam_demux ->
                     (run_id, barcode_demux, extension_demux) = bam_demux.toString().tokenize(".")
@@ -506,7 +511,10 @@ final_fastq_channel = new_fastq_channel_barcoded_meta.concat(new_fastq_non_barco
             }
             .set{ ch_samtools_fastq_rebasecall_in}
         }
+
         if(params.skip_demux) {
+
+            DORADO_BASECALLER( ch_dorado_basecall_in, params.dorado_model, ch_mod_bases)
 
             DORADO_BASECALLER.out.ubam
             .map{ meta, ubam ->
@@ -525,38 +533,34 @@ final_fastq_channel = new_fastq_channel_barcoded_meta.concat(new_fastq_non_barco
             .set{ ch_samtools_fastq_rebasecall_in}
         }
 
-    SAMTOOLS_PASS( ch_samtools_fastq_rebasecall_in.map{meta, bam -> [meta, bam, []]}, ch_fasta, [] )
+    SAMTOOLS_VIEW_FASTQ_PASS( ch_samtools_fastq_rebasecall_in.map{meta, bam -> [meta, bam, []]}, ch_fasta, [] )
 
     // This should be combined into fcqrs-process
-    SAMTOOLS_FASTQ_REBASECALL( ch_samtools_fastq_rebasecall_in )
+   // SAMTOOLS_FASTQ_REBASECALL( ch_samtools_fastq_rebasecall_in )
 
-    SAMTOOLS_FASTQ_SAMTOOLS_PASS( SAMTOOLS_PASS.out.bam )
+   // SAMTOOLS_FASTQ_SAMTOOLS_PASS( SAMTOOLS_PASS.out.bam )
 
-    SAMTOOLS_FASTQ_REBASECALL.out.fastq
-        .set{ ch_fqcrs_rebasecall_in }
+    //SAMTOOLS_FASTQ_REBASECALL.out.fastq
+    //    .set{ ch_fqcrs_rebasecall_in }
 
     if(!params.skip_mapping) {
-        ALIGN_READS( SAMTOOLS_FASTQ_SAMTOOLS_PASS.out.fastq, mmi )
+        ALIGN_READS( SAMTOOLS_VIEW_FASTQ_PASS.out.fastq, mmi )
 
         bam_bai = ALIGN_READS.out.bam_bai
         bam     = ALIGN_READS.out.bam
         bai     = ALIGN_READS.out.bai
     }
 
-    FQCRS_REBASECALL( ch_fqcrs_rebasecall_in )
-    FQCRS_TO_HIVE_REBASECALL( FQCRS_REBASECALL.out.res )
+    FQCRS_BAM( ch_samtools_fastq_rebasecall_in )
+
+    FQCRS_TO_HIVE_REBASECALL( FQCRS_BAM.out.res )
 
     }
 
-    if(params.skip_basecall && !params.skip_mapping) {
-        if(params.bam)
-        {
-        MOSDEPTH_REBASECALL( bam_bai_non_rebasecalled.combine(ch_bed.map{ meta, bed -> bed }), ch_fasta )
-        }
-
-    } else if (!params.skip_mapping){
+    if (!params.skip_mapping){
 
         MOSDEPTH_REBASECALL( bam_bai.combine(ch_bed.map{ meta, bed -> bed }), ch_fasta )
+        MOSDEPTH_500( bam_bai.map{ meta, bam, bai -> [meta, bam, bai, []] }, ch_fasta )
 
     }
 

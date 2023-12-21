@@ -60,7 +60,7 @@ read_fqcrs_to_arrow <- function(file_path) {
 
 
 file_pathx <- options$input
-files <- list.files(file_pathx, recursive = TRUE, pattern = "*.txt", full.names = TRUE)
+files <- list.files(file_pathx, recursive = TRUE, pattern = "*.txt.gz", full.names = TRUE)
 
 out_pathx <- options$out
 
