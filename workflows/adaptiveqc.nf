@@ -35,6 +35,7 @@ ch_multiqc_custom_methods_description = params.multiqc_methods_description ? fil
 include { FQCRS                             } from '../modules/local/fqcrs/main'
 include { FQCRS as FQCRS_REBASECALL         } from '../modules/local/fqcrs/main'
 include { DORADO_BASECALLER                 } from '../modules/local/dorado/basecaller/main'
+include { DORADO_BASECALLER_DEMUX           } from '../modules/local/dorado/basecaller_demux/main'
 include { DORADO_DEMUX                      } from '../modules/local/dorado/demux/main'
 include { POD5_CONVERT                      } from '../modules/local/pod5/convert/main'
 include { ONT_SEQUENCING_SUMMARY_TO_PARQUET } from '../modules/local/ont_sequencing_summary_to_parquet/main'
@@ -482,13 +483,14 @@ final_fastq_channel = new_fastq_channel_barcoded_meta.concat(new_fastq_non_barco
 
     if(!params.skip_basecall) {
 
-        DORADO_BASECALLER( ch_dorado_basecall_in, params.dorado_model, ch_mod_bases)
 
         if(!params.skip_demux) {
 
-            DORADO_DEMUX ( DORADO_BASECALLER.out.ubam, params.barcode_kit)
+            // Directly demux basecalled BAM's to reduce temporary files
+            DORADO_BASECALLER_DEMUX( ch_dorado_basecall_in, params.dorado_model, ch_mod_bases, params.barcode_kit)
 
-            DORADO_DEMUX.out.barcode_bam // This process will always output multiple files..
+
+            DORADO_BASECALLER_DEMUX.out.barcode_bam // This process will always output multiple files..
                 .transpose(remainder:true) // Transpose works but have to wait for all to finish - nedd to get it to group by barcode
                 .map{ meta_demux, bam_demux ->
                     (run_id, barcode_demux, extension_demux) = bam_demux.toString().tokenize(".")
@@ -506,7 +508,10 @@ final_fastq_channel = new_fastq_channel_barcoded_meta.concat(new_fastq_non_barco
             }
             .set{ ch_samtools_fastq_rebasecall_in}
         }
+
         if(params.skip_demux) {
+
+            DORADO_BASECALLER( ch_dorado_basecall_in, params.dorado_model, ch_mod_bases)
 
             DORADO_BASECALLER.out.ubam
             .map{ meta, ubam ->
