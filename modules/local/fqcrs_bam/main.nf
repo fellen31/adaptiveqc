@@ -2,7 +2,7 @@ process FQCRS_BAM {
     tag "$meta.id"
     label 'process_high'
 
-    container "docker.io/fellen31/fqcrs_samtools:0.0.1"
+    container "docker.io/fellen31/fqcrs_samtools:0.0.2"
 
     // Exit if running this module with -profile conda / -profile mamba
     if (workflow.profile.tokenize(',').intersect(['conda', 'mamba']).size() >= 1) {
@@ -26,7 +26,7 @@ process FQCRS_BAM {
     """
     mkdir -p res/${meta.experiment}/${meta.sample}/${meta.run_id}/${meta.type}/${meta.barcode}
 
-    samtools fastq -@ ${task.cpus} ${bam} | fqcrs > res/${meta.experiment}/${meta.sample}/${meta.run_id}/${meta.type}/${meta.barcode}/${meta.id}.txt
+    samtools fastq -@ ${task.cpus} ${bam} | fqcrs | pigz -p ${task.cpus} > res/${meta.experiment}/${meta.sample}/${meta.run_id}/${meta.type}/${meta.barcode}/${meta.id}.txt.gz
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
