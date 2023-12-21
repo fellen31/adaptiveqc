@@ -34,6 +34,7 @@ ch_multiqc_custom_methods_description = params.multiqc_methods_description ? fil
 
 include { FQCRS                             } from '../modules/local/fqcrs/main'
 include { FQCRS as FQCRS_REBASECALL         } from '../modules/local/fqcrs/main'
+include { FQCRS_BAM                         } from '../modules/local/fqcrs_bam/main'
 include { DORADO_BASECALLER                 } from '../modules/local/dorado/basecaller/main'
 include { DORADO_BASECALLER_DEMUX           } from '../modules/local/dorado/basecaller_demux/main'
 include { DORADO_DEMUX                      } from '../modules/local/dorado/demux/main'
@@ -548,8 +549,9 @@ final_fastq_channel = new_fastq_channel_barcoded_meta.concat(new_fastq_non_barco
         bai     = ALIGN_READS.out.bai
     }
 
-    FQCRS_REBASECALL( ch_fqcrs_rebasecall_in )
-    FQCRS_TO_HIVE_REBASECALL( FQCRS_REBASECALL.out.res )
+    FQCRS_BAM( ch_samtools_fastq_rebasecall_in )
+
+    FQCRS_TO_HIVE_REBASECALL( FQCRS_BAM.out.res )
 
     }
 
