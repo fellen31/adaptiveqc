@@ -2,7 +2,7 @@ process FQCRS_TO_HIVE {
     tag "$meta.id"
     label 'process_medium'
 
-    container "docker.io/fellen31/ont_sequencing_summary_to_parquet:231121"
+    container "docker.io/fellen31/ont_sequencing_summary_to_parquet:231223"
 
     // Exit if running this module with -profile conda / -profile mamba
     if (workflow.profile.tokenize(',').intersect(['conda', 'mamba']).size() >= 1) {
