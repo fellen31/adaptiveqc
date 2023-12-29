@@ -24,7 +24,6 @@ process SAMTOOLS_VIEW_FASTQ {
     script:
     def args = task.ext.args ?: ''
     def args2 = task.ext.args2 ?: ''
-    def args3 = task.ext.args2 ?: ''
     def prefix = task.ext.prefix ?: "${meta.id}"
     def reference = fasta ? "--reference ${fasta}" : ""
     def readnames = qname ? "--qname-file ${qname}": ""
@@ -39,7 +38,7 @@ process SAMTOOLS_VIEW_FASTQ {
         $input |\\
     samtools \\
         fastq \\
-        $args3 \\
+        $args2 \\
         --threads ${task.cpus-1} \\
         | pigz -p ${task.cpus} > ${prefix}.fastq.gz
 
