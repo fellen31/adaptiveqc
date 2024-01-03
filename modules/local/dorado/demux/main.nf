@@ -2,7 +2,7 @@ process DORADO_DEMUX {
     tag "$meta.id"
     label 'process_high' // Something like if modified bases - process high?
 
-    container "docker.io/fellen31/dorado:0.4.3"
+    container "docker.io/fellen31/dorado:0.5.0"
 
     // Exit if running this module with -profile conda / -profile mamba
     if (workflow.profile.tokenize(',').intersect(['conda', 'mamba']).size() >= 1) {
