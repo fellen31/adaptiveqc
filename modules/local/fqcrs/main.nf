@@ -2,7 +2,7 @@ process FQCRS {
     tag "$meta.id"
     label 'process_single'
 
-    container "docker.io/fellen31/fqcrs:latest"
+    container "docker.io/fellen31/fqcrs:0.1.0"
 
     // Exit if running this module with -profile conda / -profile mamba
     if (workflow.profile.tokenize(',').intersect(['conda', 'mamba']).size() >= 1) {
