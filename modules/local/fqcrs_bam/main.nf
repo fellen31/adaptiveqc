@@ -2,7 +2,7 @@ process FQCRS_BAM {
     tag "$meta.id"
     label 'process_high'
 
-    container "docker.io/fellen31/fqcrs_samtools:0.0.2"
+    container "docker.io/fellen31/fqcrs_samtools:0.0.3"
 
     // Exit if running this module with -profile conda / -profile mamba
     if (workflow.profile.tokenize(',').intersect(['conda', 'mamba']).size() >= 1) {

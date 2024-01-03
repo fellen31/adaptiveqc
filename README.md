@@ -9,7 +9,7 @@
 
 ## Introduction
 
-**fellen31/adaptiveqc** is a bioinformatics pipeline that ...
+**fellen31/adaptiveqc** is a bioinformatics pipeline that:
 
 <!-- TODO nf-core:
    Complete this sentence with a 2-3 sentence summary of what types of data the pipeline ingests, a brief overview of the
@@ -21,32 +21,37 @@
      workflows use the "tube map" design for that. See https://nf-co.re/docs/contributing/design_guidelines#examples for examples.   -->
 <!-- TODO nf-core: Fill in short bullet-pointed list of the default steps in the pipeline -->
 
-1. Read QC ([`FastQC`](https://www.bioinformatics.babraham.ac.uk/projects/fastqc/))
-2. Present QC for raw reads ([`MultiQC`](http://multiqc.info/))
+1. Converts fast5-files to pod5
+2. rebasecall (and demultiplex) with dorado
+3. Create parquet-hives from MinKNOW sequencing summary & read id, length and average quality from fqcrs
+4. Make fastq-pass files (with methylation-tags) 
+5. (Align reads to reference with minimap2)
+6. (Check sequencing coverage with mosdepth) 
+
+In parallel for any number of experiments.
 
 ## Usage
 
-:::note
-If you are new to Nextflow and nf-core, please refer to [this page](https://nf-co.re/docs/usage/installation) on how
-to set-up Nextflow. Make sure to [test your setup](https://nf-co.re/docs/usage/introduction#how-to-run-a-pipeline)
-with `-profile test` before running the workflow on actual data.
-:::
+> [!NOTE]
+>If you are new to Nextflow and nf-core, please refer to [this page](https://nf-co.re/docs/usage/installation) on how
+>to set-up Nextflow. Make sure to [test your setup](https://nf-co.re/docs/usage/introduction#how-to-run-a-pipeline)
+>with `-profile test` before running the workflow on actual data.
+
 
 <!-- TODO nf-core: Describe the minimum required steps to execute the pipeline, e.g. how to prepare samplesheets.
      Explain what rows and columns represent. For instance (please edit as appropriate):
-
+-->
 First, prepare a samplesheet with your input data that looks as follows:
 
 `samplesheet.csv`:
 
 ```csv
-sample,fastq_1,fastq_2
-CONTROL_REP1,AEG588A1_S1_L002_R1_001.fastq.gz,AEG588A1_S1_L002_R2_001.fastq.gz
+sample,dir
+EXPERIMENT1,/path/to/minKNOW/output/folder/
+EXPERIMENT2,/path/to/minKNOW/output/folder2/
 ```
 
-Each row represents a fastq file (single-end) or a pair of fastq files (paired end).
-
--->
+Each row represents a MinKNOW experiment.
 
 Now, you can run the pipeline using:
 
@@ -54,16 +59,22 @@ Now, you can run the pipeline using:
 
 ```bash
 nextflow run fellen31/adaptiveqc \
-   -profile <docker/singularity/.../institute> \
-   --input samplesheet.csv \
-   --outdir <OUTDIR>
+  --input samplesheet.csv \
+  --outdir test_out \
+  -profile docker \
+  --fasta GRCh38_no_alt_analysis_set.fasta \
+  --bed genes.bed  \
+  --dorado_model 'dna_r10.4.1_e8.2_400bps_fast@v4.2.0' \
+  --barcode_kit 'SQK-NBD114-24' \
+  --pass_threshold 8
+
 ```
 
-:::warning
-Please provide pipeline parameters via the CLI or Nextflow `-params-file` option. Custom config files including those
-provided by the `-c` Nextflow option can be used to provide any configuration _**except for parameters**_;
-see [docs](https://nf-co.re/usage/configuration#custom-configuration-files).
-:::
+>[!WARNING]
+>Please provide pipeline parameters via the CLI or Nextflow `-params-file` option. Custom config files including those
+>provided by the `-c` Nextflow option can be used to provide any configuration _**except for parameters**_;
+>see [docs](https://nf-co.re/usage/configuration#custom-configuration-files).
+>
 
 ## Credits
 
