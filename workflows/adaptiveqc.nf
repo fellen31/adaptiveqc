@@ -39,7 +39,9 @@ include { POD5_CONVERT                                    } from '../modules/loc
 include { ONT_SEQUENCING_SUMMARY_TO_PARQUET               } from '../modules/local/ont_sequencing_summary_to_parquet/main'
 include { FQCRS_TO_HIVE as FQCRS_TO_HIVE_REBASECALL       } from '../modules/local/fqcrs_to_hive/main'
 include { SAMTOOLS_VIEW_FASTQ as SAMTOOLS_VIEW_FASTQ_PASS } from '../modules/local/samtools/view_fastq/main'
-
+include { SAMTOOLS_VIEW_TARGET_READS as SAMTOOLS_VIEW_ON_TARGET_READS } from '../modules/local/samtools/view_target_reads/main.nf'
+include { SAMTOOLS_VIEW_TARGET_READS as SAMTOOLS_VIEW_OFF_TARGET_READS } from '../modules/local/samtools/view_target_reads/main.nf'
+include { SPLIT_BED_LINES } from '../modules/local/split_bed_lines.nf'
 //
 // SUBWORKFLOW: Consisting of a mix of local and nf-core/modules
 //
@@ -58,8 +60,12 @@ include { PREPARE_GENOME             } from '../subworkflows/local/prepare_genom
 //
 
 include { SAMTOOLS_FASTQ as SAMTOOLS_FASTQ_SAMTOOLS_PASS } from '../modules/nf-core/samtools/fastq/main'
+include { SAMTOOLS_FASTQ as SAMTOOLS_FASTQ_REBASECALL    } from '../modules/nf-core/samtools/fastq/main'
 include { MOSDEPTH as MOSDEPTH_REBASECALL                } from '../modules/nf-core/mosdepth/main'
+include { MOSDEPTH as MOSDEPTH_INVERSE                } from '../modules/nf-core/mosdepth/main'
 include { MOSDEPTH as MOSDEPTH_500                       } from '../modules/nf-core/mosdepth/main'
+include { BEDTOOLS_SORT                                  } from '../modules/nf-core/bedtools/sort/main'
+include { BEDTOOLS_COMPLEMENT                            } from '../modules/nf-core/bedtools/complement/main'
 include { MULTIQC                                        } from '../modules/nf-core/multiqc/main'
 include { CUSTOM_DUMPSOFTWAREVERSIONS                    } from '../modules/nf-core/custom/dumpsoftwareversions/main'
 
@@ -96,8 +102,8 @@ workflow ADAPTIVEQC {
 
     if(params.mod_bases) { ch_mod_bases = params.mod_bases} // todo, exit on not set
 
-    // Index genome
-    if(!params.skip_mapping) {
+    // Index genome (need fai if bed)
+    if(!params.skip_mapping | !params.bed) {
 
         PREPARE_GENOME( ch_fasta )
         ch_versions = ch_versions.mix(PREPARE_GENOME.out.versions)
@@ -106,6 +112,19 @@ workflow ADAPTIVEQC {
         fasta = ch_fasta
         fai   = PREPARE_GENOME.out.fai
         mmi   = PREPARE_GENOME.out.mmi
+
+        ch_bed.
+            map{ name, file ->
+                 [[id:name],file]
+            }
+            .set{ ch_bed_with_meta }
+
+        BEDTOOLS_SORT( ch_bed_with_meta, fai.map{ it[1] } )
+        BEDTOOLS_COMPLEMENT( BEDTOOLS_SORT.out.sorted, fai.map{ it[1] })
+
+        BEDTOOLS_COMPLEMENT.out.bed
+            .set{ ch_bed_with_meta_inverse }
+
     }
 
     // Start by putting all files into channels
@@ -289,9 +308,21 @@ workflow ADAPTIVEQC {
         bam     = ALIGN_READS.out.bam
         bai     = ALIGN_READS.out.bai
 
-        // Run mosdepth per 500 bp and per bed-file
+        // Run mosdepth per 500 bp and per bed-file & inverse bed-file
         MOSDEPTH_REBASECALL( bam_bai.combine(ch_bed.map{ meta, bed -> bed }), ch_fasta )
+        MOSDEPTH_INVERSE( bam_bai.combine(ch_bed_with_meta_inverse.map{ meta, bed -> bed }), ch_fasta )
         MOSDEPTH_500( bam_bai.map{ meta, bam, bai -> [meta, bam, bai, []] }, ch_fasta )
+
+
+        SPLIT_BED_LINES(ch_bed_with_meta)
+
+        SPLIT_BED_LINES.out.txt
+            .map{meta, regions -> regions }
+            .flatten()
+            .view()
+
+        SAMTOOLS_VIEW_ON_TARGET_READS(bam_bai, ch_fasta, ch_bed_with_meta)
+        SAMTOOLS_VIEW_OFF_TARGET_READS(bam_bai, ch_fasta, ch_bed_with_meta_inverse)
 
     }
 
