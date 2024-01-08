@@ -74,7 +74,7 @@ make_hive_from_fqcrs <- function(file_path, out_path) {
   fastq_dir <- options$dir
   protocol_id_dir <- options$run_id
   sample_id_dir <- options$sample
-  experiment_id_dir <- options$sample
+  experiment_id_dir <- options$experiment
   file <- split_path[length(split_path)]
 
   read_fqcrs_to_arrow(file_path) |>

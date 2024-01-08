@@ -38,8 +38,10 @@ include { DORADO_BASECALLER_DEMUX                         } from '../modules/loc
 include { POD5_CONVERT                                    } from '../modules/local/pod5/convert/main'
 include { ONT_SEQUENCING_SUMMARY_TO_PARQUET               } from '../modules/local/ont_sequencing_summary_to_parquet/main'
 include { FQCRS_TO_HIVE as FQCRS_TO_HIVE_REBASECALL       } from '../modules/local/fqcrs_to_hive/main'
+include { TARGET_READ_ID_TO_HIVE                          } from '../modules/local/target_read_id_to_hive/main'
 include { SAMTOOLS_VIEW_FASTQ as SAMTOOLS_VIEW_FASTQ_PASS } from '../modules/local/samtools/view_fastq/main'
 include { SAMTOOLS_VIEW_TARGET_READS as SAMTOOLS_VIEW_ON_TARGET_READS } from '../modules/local/samtools/view_target_reads/main.nf'
+include { SAMTOOLS_VIEW_TARGET_READS_REGIONS } from '../modules/local/samtools/view_target_reads_regions/main.nf'
 include { SAMTOOLS_VIEW_TARGET_READS as SAMTOOLS_VIEW_OFF_TARGET_READS } from '../modules/local/samtools/view_target_reads/main.nf'
 include { SPLIT_BED_LINES } from '../modules/local/split_bed_lines.nf'
 //
@@ -317,12 +319,38 @@ workflow ADAPTIVEQC {
         SPLIT_BED_LINES(ch_bed_with_meta)
 
         SPLIT_BED_LINES.out.txt
-            .map{meta, regions -> regions }
-            .flatten()
-            .view()
+            .transpose()
+            .map{ meta, file ->
+                [['id':file.simpleName], file]
+                }
+            .set{ view_per_target}
 
+
+       /* bam_bai
+            .combine(view_per_target.map{ meta, file -> file})
+            .map{ old_meta, bam, bai, bed ->
+            new_target_meta = [
+                id: old_meta.id,
+                experiment: old_meta.experiment.flatten(),
+                sample: old_meta.sample.flatten(),
+                run_id: old_meta.run_id.flatten(),
+                type: old_meta.type.flatten(),
+                barcode: old_meta.barcode.flatten(),
+                region: bed.simpleName.flatten(),
+                file: old_meta.file.flatten() // Refers to bam, could remove?
+            ]
+            [[new_target_meta], bam, bai, bed]
+            }
+            .set{ view_on_target_reads_regions_in }
+*/
         SAMTOOLS_VIEW_ON_TARGET_READS(bam_bai, ch_fasta, ch_bed_with_meta)
+  //      SAMTOOLS_VIEW_TARGET_READS_REGIONS(view_on_target_reads_regions_in, ch_fasta)
         SAMTOOLS_VIEW_OFF_TARGET_READS(bam_bai, ch_fasta, ch_bed_with_meta_inverse)
+
+
+        //SAMTOOLS_VIEW_TARGET_READS_REGIONS.out.res.view()
+
+    //    TARGET_READ_ID_TO_HIVE(SAMTOOLS_VIEW_TARGET_READS_REGIONS.out.res)
 
     }
 
