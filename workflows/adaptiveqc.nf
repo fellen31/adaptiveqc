@@ -38,7 +38,6 @@ include { DORADO_BASECALLER_DEMUX                         } from '../modules/loc
 include { POD5_CONVERT                                    } from '../modules/local/pod5/convert/main'
 include { ONT_SEQUENCING_SUMMARY_TO_PARQUET               } from '../modules/local/ont_sequencing_summary_to_parquet/main'
 include { FQCRS_TO_HIVE as FQCRS_TO_HIVE_REBASECALL       } from '../modules/local/fqcrs_to_hive/main'
-include { TARGET_READ_ID_TO_HIVE                          } from '../modules/local/target_read_id_to_hive/main'
 include { SAMTOOLS_VIEW_FASTQ as SAMTOOLS_VIEW_FASTQ_PASS } from '../modules/local/samtools/view_fastq/main'
 include { SAMTOOLS_VIEW_TARGET_READS as SAMTOOLS_VIEW_ON_TARGET_READS } from '../modules/local/samtools/view_target_reads/main.nf'
 include { SAMTOOLS_VIEW_TARGET_READS_REGIONS } from '../modules/local/samtools/view_target_reads_regions/main.nf'
