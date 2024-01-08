@@ -40,7 +40,6 @@ include { ONT_SEQUENCING_SUMMARY_TO_PARQUET               } from '../modules/loc
 include { FQCRS_TO_HIVE as FQCRS_TO_HIVE_REBASECALL       } from '../modules/local/fqcrs_to_hive/main'
 include { SAMTOOLS_VIEW_FASTQ as SAMTOOLS_VIEW_FASTQ_PASS } from '../modules/local/samtools/view_fastq/main'
 include { SAMTOOLS_VIEW_TARGET_READS as SAMTOOLS_VIEW_ON_TARGET_READS } from '../modules/local/samtools/view_target_reads/main.nf'
-include { SAMTOOLS_VIEW_TARGET_READS_REGIONS } from '../modules/local/samtools/view_target_reads_regions/main.nf'
 include { SAMTOOLS_VIEW_TARGET_READS as SAMTOOLS_VIEW_OFF_TARGET_READS } from '../modules/local/samtools/view_target_reads/main.nf'
 //
 // SUBWORKFLOW: Consisting of a mix of local and nf-core/modules
